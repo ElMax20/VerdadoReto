@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verdad o Reto</title>
+    <!-- Carga de Tailwind CSS para estilos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Fuente Inter */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Un color de fondo suave */
+        }
+        /* Estilos personalizados para la ruleta */
+        .roulette-container {
+            position: relative;
+            width: 300px; /* Ancho de la ruleta */
+            height: 300px; /* Alto de la ruleta */
+            border-radius: 50%; /* ¡CLAVE para que sea redondo! */
+            overflow: hidden; /* Ocultar el contenido que se salga del círculo */
+            border: 8px solid #cbd5e1; /* Borde exterior */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15); /* Sombra para profundidad */
+            background-color: #fff; /* Fondo blanco */
+            margin: auto; /* Centrar */
+        }
+        .roulette-wheel {
+            width: 100%;
+            height: 100%;
+            display: flex; /* Para centrar los segmentos */
+            justify-content: center;
+            align-items: center;
+            transition: transform 7s cubic-bezier(0.25, 0.1, 0.25, 1); /* Animación de giro más larga y suave para mayor ansiedad */
+            position: relative;
+            transform-origin: center center; /* El pivote del giro es el centro */
+            /* conic-gradient se aplicará dinámicamente con JS */
+        }
+        /* Estilos para las etiquetas de los jugadores en la ruleta */
+        .player-label {
+            position: absolute;
+            font-weight: bold;
+            color: #fff;
+            text-align: center;
+            /* Aumentado el tamaño de la fuente para mejor legibilidad */
+            font-size: 1.1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 5px 10px;
+            /* Fondo ligeramente más oscuro para mejor contraste */
+            background: rgba(0,0,0,0.4);
+            border-radius: 5px;
+            transform-origin: center; /* Para que gire sobre su propio centro al enderezarse */
+            max-width: 90%; /* Limitar el ancho para evitar desbordamiento en nombres largos */
+        }
+        .roulette-pointer {
+            position: absolute;
+            top: -20px; /* Posicionar el puntero justo encima de la ruleta */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-bottom: 30px solid #ef4444; /* Color rojo */
+            z-index: 10;
+        }
+        /* Estilos para el mensaje emergente (modal) */
+        .modal {
+            display: none; /* Oculto por defecto, se muestra con JS */
+            position: fixed; /* Posición fija en la pantalla para cubrir todo */
+            z-index: 100; /* Por encima de todo lo demás */
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto; /* Habilitar scroll si el contenido es grande */
+            background-color: rgba(0,0,0,0.6); /* ¡FONDO semi-transparente para el overlay! */
+            display: flex; /* Para centrar el contenido del modal */
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #ffffff; /* ¡FONDO BLANCO para la ventana del modal! */
+            margin: auto;
+            padding: 30px;
+            border-radius: 15px; /* Bordes redondeados */
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2); /* Sombra para que destaque */
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
+            position: relative;
+            animation: fadeInScale 0.3s ease-out; /* Animación de entrada */
+        }
+        .close-button {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: #333;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        /* Clase para deshabilitar botones durante el giro */
+        .btn-disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        /* Estilos para el indicador de carga */
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3B82F6; /* Color azul */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-r from-blue-400 to-purple-500 min-h-screen flex items-center justify-center py-12 px-4">
+    <div class="bg-white rounded-3xl shadow-xl p-8 sm:p-12 max-w-4xl w-full flex flex-col lg:flex-row gap-8 lg:gap-12 transform transition-all duration-300">
+        <!-- Columna de Gestión de Jugadores -->
+        <div class="flex-1">
+            <h1 class="text-4xl font-extrabold text-gray-800 mb-6 text-center lg:text-left">Verdad o Reto</h1>
+            <p class="text-gray-600 mb-8 text-center lg:text-left">¡Elige a tus jugadores y que empiece la diversión!</p>
+
+            <div class="mb-8 p-6 bg-blue-50 rounded-2xl shadow-inner">
+                <h2 class="text-2xl font-bold text-blue-700 mb-4">Añadir Jugadores</h2>
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                    <input type="text" id="playerNameInput" placeholder="Nombre del jugador"
+                           class="flex-1 p-3 border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200">
+                    <button id="addPlayerBtn"
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 transform hover:scale-105">
+                        Añadir
+                    </button>
+                </div>
+                <div id="playersList" class="space-y-2 max-h-48 overflow-y-auto">
+                    <!-- Los jugadores se listarán aquí -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Columna de la Ruleta y Acciones -->
+        <div class="flex-1 flex flex-col items-center justify-center">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">La Ruleta</h2>
+
+            <div class="roulette-container mb-8">
+                <div class="roulette-wheel" id="rouletteWheel">
+                    <!-- Los segmentos de color y las etiquetas de jugador se generarán con JS aquí -->
+                </div>
+                <div class="roulette-pointer"></div>
+            </div>
+
+            <button id="spinBtn"
+                    class="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-4 px-10 rounded-full shadow-lg transition duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-green-300 mb-8">
+                Girar Ruleta
+            </button>
+
+            <div id="winnerDisplay" class="text-2xl font-semibold text-gray-700 mb-8 text-center">
+                <!-- Aquí se mostrará el ganador -->
+            </div>
+
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">¿Verdad o Reto?</h2>
+            <div class="flex flex-col sm:flex-row gap-6 w-full max-w-md">
+                <button id="truthBtn"
+                        class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-300 btn-disabled">
+                    Verdad
+                </button>
+                <button id="dareBtn"
+                        class="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300 btn-disabled">
+                    Reto
+                </button>
+            </div>
+
+            <!-- Nuevos botones para Verdad y Reto con IA -->
+            <div class="flex flex-col sm:flex-row gap-6 w-full max-w-md mt-6">
+                <button id="aiTruthBtn"
+                        class="flex-1 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                    ✨ Verdad con IA
+                </button>
+                <button id="aiDareBtn"
+                        class="flex-1 bg-gradient-to-r from-pink-500 to-orange-600 hover:from-pink-600 hover:to-orange-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-pink-300">
+                    ✨ Reto con IA
+                </button>
+            </div>
+            <div id="aiLoadingIndicator" class="mt-4 text-center text-gray-600 hidden">
+                <span class="loading-spinner"></span> Generando...
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para mostrar la Verdad o el Reto -->
+    <div id="gameModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-button" id="closeModalBtn">&times;</span>
+            <h3 id="modalTitle" class="text-3xl font-bold text-gray-800 mb-4"></h3>
+            <p id="modalMessage" class="text-xl text-gray-700 leading-relaxed mb-6"></p>
+            <button id="okModalBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition duration-300 transform hover:scale-105">
+                ¡Entendido!
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Array para almacenar los nombres de los jugadores
+        let players = [];
+        // Referencias a elementos del DOM
+        const playerNameInput = document.getElementById('playerNameInput');
+        const addPlayerBtn = document.getElementById('addPlayerBtn');
+        const playersList = document.getElementById('playersList');
+        const rouletteWheel = document.getElementById('rouletteWheel');
+        const spinBtn = document.getElementById('spinBtn');
+        const winnerDisplay = document.getElementById('winnerDisplay');
+        const truthBtn = document.getElementById('truthBtn');
+        const dareBtn = document.getElementById('dareBtn');
+        const aiTruthBtn = document.getElementById('aiTruthBtn');
+        const aiDareBtn = document.getElementById('aiDareBtn');
+        const aiLoadingIndicator = document.getElementById('aiLoadingIndicator');
+        const gameModal = document.getElementById('gameModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const okModalBtn = document.getElementById('okModalBtn');
+
+        // Variables de estado del juego
+        let currentPlayerIndex = -1; // Índice del jugador actual en la ruleta
+
+        // Listas de preguntas de Verdad y Retos (predefinidas)
+        const truthQuestions = [
+            "¿Cuál es la cosa más embarazosa que te ha pasado en público?",
+            "¿Cuál es tu mayor miedo irracional?",
+            "Si pudieras cambiar una cosa de tu pasado, ¿cuál sería y por qué?",
+            "¿Cuál es un secreto que nunca le has contado a nadie?",
+            "¿Qué es lo más atrevido que has hecho?",
+            "¿Qué harías si supieras que no puedes fallar?",
+            "Si tuvieras que elegir una canción que describa tu vida, ¿cuál sería?",
+            "¿Cuál es la mentira más grande que has dicho?",
+            "¿Qué es lo que más te avergüenza de tu habitación?",
+            "¿Qué es lo más cursi que has hecho por amor?",
+            "¿Cuál es tu mayor arrepentimiento?",
+            "Si pudieras tener una cena con cualquier persona (viva o muerta), ¿quién sería?",
+            "¿Qué es lo más valiente que has hecho?",
+            "¿Qué es lo que más te frustra de ti mismo?",
+            "¿Cuál es tu peor hábito secreto?",
+            "¿Qué es lo más extraño que has comido?",
+            "¿Cuál ha sido tu peor cita?",
+            "¿Qué cualidad valoras más en una persona?",
+            "¿Si pudieras vivir en cualquier época, cuál elegirías y por qué?",
+            "¿Qué cosa te hace sentir más orgulloso?",
+            "¿Cuál es tu mayor fantasía secreta?",
+            "¿Alguna vez te has sentido atraído por alguien de esta sala?",
+            "¿Qué es lo más picante que has hecho en un lugar público?",
+            "¿Cuál es el rumor más extraño que has escuchado sobre ti?",
+            "¿Qué es lo más raro que tienes en tu mesita de noche?",
+            "Si pudieras ser invisible por un día, ¿qué harías?",
+            "¿Cuál es el peor mensaje de texto que has enviado (por error o no)?",
+            "¿Cuál es tu peor gusto culposo en películas o música?",
+            "¿Qué es lo más vergonzoso que tus padres saben de ti?",
+            "¿Alguna vez has mentido para salir de una situación incómoda?",
+            "¿Cuál es tu mayor inseguridad?",
+            "¿Qué te hace sentir más vulnerable?",
+            "Si pudieras preguntarle algo a tu yo futuro, ¿qué sería?",
+            "¿Qué es lo más arriesgado que has hecho que casi sale mal?",
+            "¿Cuál es tu mayor placer culpable?",
+            "¿Alguna vez has fingido que te gusta un regalo?",
+            "¿Qué es lo más raro que has encontrado en la calle y te has llevado?",
+            "¿Cuál es tu recuerdo más incómodo de la infancia?",
+            "¿Qué harías si te ganaras la lotería hoy?",
+            "¿Cuál es tu mayor sueño no cumplido?",
+            "¿Qué es lo más descarado que has hecho para conseguir algo?",
+            "¿Has cotilleado el móvil de alguien sin permiso?",
+            "¿Cuál es la cosa más inmadura que sigues haciendo?",
+            "¿Qué es lo más raro que has dicho en voz alta sin darte cuenta?",
+            "¿Alguna vez has llorado viendo una película o serie?",
+            "¿Cuál es tu mayor capricho secreto?",
+            "¿Qué es lo que más te avergüenza de tu perfil en redes sociales?",
+            "¿Cuál es tu opinión impopular sobre algo?",
+            "Si pudieras tener un superpoder, ¿cuál elegirías y por qué?",
+            "¿Qué es lo más infantil que haces cuando estás solo?",
+            "¿Alguna vez te has sonrojado por algo que hiciste o dijiste?",
+            "¿Cuál es tu mayor arrepentimiento en el amor?",
+            "¿Qué es lo más loco que harías por amor?",
+            "¿Cuál ha sido la situación más ridícula en la que te has metido?",
+            "¿Has vomitado alguna vez en público?",
+            "¿Qué es lo más tonto que has comprado?",
+            "¿Alguna vez has cantado en la ducha como si fueras una estrella?",
+            "¿Cuál es tu mayor adicción (no necesariamente algo malo)?",
+            "¿Qué es lo que más te irrita de la gente?",
+            "Si pudieras viajar en el tiempo, ¿a qué época irías y por qué?",
+            "¿Cuál es el chiste más malo que te sabes?",
+            "¿Qué es lo más perezoso que has hecho?",
+            "¿Alguna vez te has hecho pasar por otra persona?",
+            "¿Cuál es tu mayor manía?",
+            "¿Qué es lo más dulce que has hecho por alguien?",
+            "¿Alguna vez has fingido estar enfermo para no ir a algún sitio?",
+            "¿Cuál es el cumplido más extraño que has recibido?",
+            "¿Qué harías si descubrieras que un amigo te ha traicionado?",
+            "¿Cuál es el miedo más tonto que tienes?",
+            "¿Qué es lo más desordenado de tu vida?",
+            "Si pudieras aprender un idioma instantáneamente, ¿cuál sería?",
+            "¿Qué es lo que más te gustaría mejorar de ti mismo?",
+            "¿Cuál es tu momento más embarazoso en el trabajo o la escuela?",
+            "¿Has stalkeado a alguien en redes sociales?",
+            "¿Qué es lo más inusual que has comido?",
+            "¿Cuál ha sido el peor consejo que te han dado?",
+            "¿Qué te hace sentir más vivo?",
+            "¿Alguna vez has mentido sobre tu edad?",
+            "¿Cuál es lo más impulsivo que has hecho?",
+            "¿Cuál es tu mayor extravagancia?",
+            "¿Has llorado viendo un dibujo animado?",
+            "¿Cuál es tu mayor frustración en la vida diaria?",
+            "¿Qué es lo más tonto que has creído de niño?",
+            "¿Cuál es tu peor excusa?",
+            "¿Qué es lo que más te hace reír?",
+            "¿Alguna vez te has cortado el pelo tú solo y te ha salido mal?",
+            "¿Cuál es tu mayor fantasía con un famoso?",
+            "¿Qué es lo más desagrable que has olido?",
+            "¿Cuál es tu refrán favorito?",
+            "¿Qué es lo más inesperado que te ha pasado?",
+            "¿Cuál es tu mayor debilidad?",
+            "¿Has roto algo sin querer y lo has ocultado?",
+            "¿Qué es lo más extraño que te gusta hacer?",
+            "¿Cuál es tu mejor habilidad secreta?",
+            "¿Qué te gustaría que la gente recordara de ti?",
+            "¿Cuál es tu peor pesadilla recurrente?",
+            "¿Qué es lo más valioso que tienes (que no sea dinero)?",
+            "¿Alguna vez has enviado un mensaje a la persona equivocada?",
+            "¿Cuál es tu lugar favorito en el mundo y por qué?",
+            "¿Qué es lo que más te sorprende de ti mismo?",
+            "¿Cuál ha sido la vez que más vergüenza has pasado?",
+            "¿Qué es lo que más te molesta de la tecnología?",
+            "¿Cuál es tu comida más odiada?",
+            "¿Qué es lo que más te gustaría aprender?",
+            "¿Cuál es el mejor consejo que has dado?",
+            "¿Qué es lo que más te relaja?",
+            "¿Has tenido alguna vez un ataque de risa incontrolable?",
+            "¿Qué es lo más extraño que has soñado?"
+        ];
+
+        const dareActions = [
+            "Canta una canción a todo pulmón durante 30 segundos.",
+            "Llama a un amigo y cuéntale una historia inventada con cara seria.",
+            "Haz 10 flexiones ahora mismo.",
+            "Grita por la ventana algo aleatorio (y divertido).",
+            "Baila como si nadie te estuviera viendo durante un minuto.",
+            "Hazle un cumplido sincero a cada persona en la habitación.",
+            "Interpreta tu momento favorito de una película famosa.",
+            "Haz una llamada falsa a un restaurante pidiendo la comida más extraña que se te ocurra.",
+            "Imita a un animal hasta que alguien adivine cuál es.",
+            "Deja que alguien te peine como quiera.",
+            "Dile a tu vecino algo vergonzoso (pero inofensivo) sobre ti.",
+            "Haz la pose más ridícula que puedas imaginar y manténla durante 10 segundos.",
+            "Ponte una prenda de vestir al revés por el resto del juego.",
+            "Actúa como un robot durante los próximos 5 minutos.",
+            "Come una cucharada de algo que normalmente no comerías (p.ej., mostaza pura).",
+            "Haz un discurso de agradecimiento a un objeto inanimado.",
+            "Pasa los próximos 2 minutos hablando solo con rimas.",
+            "Haz 20 saltos de tijera.",
+            "Intenta lamerte el codo.",
+            "Camina como un cangrejo hasta la cocina y de vuelta.",
+            "Manda un mensaje a tu crush diciendo algo divertido o picante.",
+            "Haz una voltereta o una pirueta en un área abierta.",
+            "Ponte un calcetín en una mano y habla con él como si fuera una marioneta.",
+            "Lame tu codo (si puedes).",
+            "Baila la Macarena en un lugar concurrido (si estás en público).",
+            "Haz una imitación de tu profesor/jefe favorito/a.",
+            "Canta una canción sin abrir la boca (tarareando).",
+            "Haz 15 sentadillas.",
+            "Envía un mensaje solo con emojis a la última persona con la que hablaste.",
+            "Vístete con la ropa de otra persona del grupo (si es posible).",
+            "Actúa como un mimo durante 1 minuto.",
+            "Haz el sonido de un cerdo o una vaca a todo volumen.",
+            "Haz un baile ridículo cada vez que alguien diga una palabra específica (a elegir por el grupo).",
+            "Pasa los próximos 10 minutos hablando solo con un acento extranjero.",
+            "Intenta tocar tu nariz con la lengua.",
+            "Dibuja un autorretrato con los ojos cerrados.",
+            "Come una cucharada de salsa picante.",
+            "Haz un poema improvisado de 4 líneas sobre la persona a tu derecha.",
+            "Mantente en una pierna hasta que sea tu turno de nuevo.",
+            "Haz un selfie divertido y publícalo en tu historia de WhatsApp/Instagram (si te atreves).",
+            "Llama a un restaurante y pregunta si venden unicornios.",
+            "Haz 10 burpees.",
+            "Haz el moonwalk (paso lunar) de Michael Jackson.",
+            "Lleva tu ropa interior por encima de tus pantalones durante 10 minutos.",
+            "Pinta un bigote falso en tu cara con un rotulador (que se quite con agua).",
+            "Haz una pirámide humana con al menos dos personas (si el grupo es suficiente).",
+            "Dile a un extraño en la calle '¡Hola, vecino!' con entusiasmo.",
+            "Habla como un pirata durante las próximas 3 rondas.",
+            "Haz flexiones con una sola mano (o inténtalo).",
+            "Cierra los ojos y adivina 3 objetos solo por el tacto.",
+            "Envía un mensaje de voz cantando 'Feliz Cumpleaños' a un número al azar.",
+            "Usa un calcetín como sombrero durante el resto del juego.",
+            "Haz un rap improvisado sobre tu vida.",
+            "Come una cucharada de mayonesa pura.",
+            "Haz un paso de baile que inventes en el momento.",
+            "Intercambia una prenda de ropa con la persona a tu izquierda.",
+            "Intenta hacer malabares con 3 objetos.",
+            "Actúa como tu celebridad favorita durante 1 minuto.",
+            "Haz 10 saltos con una pierna.",
+            "Si tienes una mascota, háblale con voz graciosa durante un minuto.",
+            "Manda un mensaje de voz a tu mamá o papá diciendo 'Te quiero, pastelito'.",
+            "Haz 5 abdominales de bicicleta.",
+            "Intenta hacer un silbido con los dedos.",
+            "Haz el sonido de un burro o un gallo lo más fuerte posible.",
+            "Ponte una venda en los ojos y haz que alguien te dé algo de comer para adivinar qué es.",
+            "Haz un discurso agradeciendo a tus zapatos.",
+            "Pasa los próximos 5 minutos caminando de puntillas.",
+            "Haz una guerra de pulgares con la persona a tu derecha.",
+            "Envía un emoji de berenjena a tus últimos 5 contactos.",
+            "Haz como si fueras un zombi durante 30 segundos.",
+            "Llama a una pizzería y pregunta si hacen entregas a la luna.",
+            "Haz un truco de magia (aunque sea uno muy malo).",
+            "Ponte una cuchara en la nariz y trata de mantenerla ahí.",
+            "Haz el baile del robot durante 20 segundos.",
+            "Pregúntale a alguien del grupo cuál es su peor secreto sin darle una razón.",
+            "Haz un sonido de animal cada vez que hables durante 5 minutos.",
+            "Intenta tocar tu barbilla con el pie.",
+            "Haz un saludo militar a cada persona del grupo.",
+            "Pasa la siguiente ronda hablando solo con gestos.",
+            "Haz una cara graciosa y mantenla hasta que alguien se ría.",
+            "Haz 10 saltos de rana.",
+            "Pide un vaso de agua en un idioma inventado.",
+            "Ponte un sombrero invisible y actúa como si lo tuvieras.",
+            "Haz una coreografía espontánea para una canción que suene.",
+            "Llama a un número aleatorio y di 'Estoy llamando para decirte que eres increíble'.",
+            "Haz un 'dab' cada vez que alguien diga 'reto'.",
+            "Haz una imitación de un personaje de dibujos animados.",
+            "Ponte un poco de salsa de tomate en la nariz y déjala ahí por 5 minutos.",
+            "Haz un 'air guitar solo'.",
+            "Manda un mensaje de texto a un amigo al azar diciendo 'Necesito una alpaca urgentemente'.",
+            "Haz un baile de ballet improvisado.",
+            "Canta tu parte favorita de una canción con la boca llena de galletas.",
+            "Haz 5 flexiones de araña (codos hacia afuera).",
+            "Haz un 'selfie' de tu lengua y envíalo a alguien del grupo.",
+            "Intenta decir el abecedario al revés.",
+            "Haz una llamada falsa a un banco pidiendo un préstamo para comprar caramelos.",
+            "Haz el sonido de un pato durante los próximos 2 minutos.",
+            "Ponte una almohada dentro de tu camisa y actúa como si estuvieras embarazado/a.",
+            "Haz un baile de breakdance (o tu mejor intento).",
+            "Intenta morderte la lengua.",
+            "Escribe tu nombre con los ojos cerrados usando la mano no dominante.",
+            "Haz 10 segundos de 'risas malvadas'.",
+            "Imita a un político famoso dando un discurso."
+        ];
+
+        // Función para agregar un jugador
+        function addPlayer() {
+            const playerName = playerNameInput.value.trim();
+            if (playerName && !players.includes(playerName)) {
+                players.push(playerName);
+                playerNameInput.value = ''; // Limpiar el input
+                renderPlayers(); // Actualizar la lista de jugadores y la ruleta
+                enableSpinButton(); // Habilitar el botón de girar si hay jugadores
+            } else if (players.includes(playerName)) {
+                showModal("¡Atención!", "Ese jugador ya ha sido añadido. Por favor, introduce un nombre diferente.");
+            } else {
+                showModal("¡Atención!", "Por favor, introduce un nombre para el jugador.");
+            }
+        }
+
+        // Función para eliminar un jugador
+        function removePlayer(name) {
+            players = players.filter(player => player !== name);
+            renderPlayers(); // Actualizar la lista y la ruleta
+            if (players.length === 0) {
+                disableSpinButton(); // Deshabilitar si no hay jugadores
+                disableTruthDareButtons(); // Deshabilitar Verdad/Reto
+                aiTruthBtn.disabled = true; // Deshabilitar botones de IA
+                aiDareBtn.disabled = true;   // Deshabilitar botones de IA
+                winnerDisplay.textContent = ""; // Limpiar el ganador
+            }
+        }
+
+        // Renderiza la lista de jugadores y actualiza la ruleta
+        function renderPlayers() {
+            playersList.innerHTML = ''; // Limpiar la lista existente
+            players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-gray-200';
+                playerDiv.innerHTML = `
+                    <span class="text-gray-700 font-medium">${player}</span>
+                    <button class="remove-player-btn text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded-md transition duration-200" data-name="${player}">
+                        Eliminar
+                    </button>
+                `;
+                playersList.appendChild(playerDiv);
+            });
+
+            // Añadir event listeners a los botones de eliminar
+            document.querySelectorAll('.remove-player-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    removePlayer(event.target.dataset.name);
+                });
+            });
+
+            updateRouletteAppearance(); // Actualizar los segmentos de la ruleta y las etiquetas
+        }
+
+        // Habilita el botón de girar
+        function enableSpinButton() {
+            spinBtn.classList.remove('btn-disabled');
+            spinBtn.disabled = false;
+        }
+
+        // Deshabilita el botón de girar
+        function disableSpinButton() {
+            spinBtn.classList.add('btn-disabled');
+            spinBtn.disabled = true;
+        }
+
+        // Habilita los botones de Verdad/Reto (tradicionales y de IA)
+        function enableTruthDareButtons() {
+            truthBtn.classList.remove('btn-disabled');
+            truthBtn.disabled = false;
+            dareBtn.classList.remove('btn-disabled');
+            dareBtn.disabled = false;
+            aiTruthBtn.disabled = false;
+            aiTruthBtn.classList.remove('btn-disabled');
+            aiDareBtn.disabled = false;
+            aiDareBtn.classList.remove('btn-disabled');
+        }
+
+        // Deshabilita los botones de Verdad/Reto (tradicionales y de IA)
+        function disableTruthDareButtons() {
+            truthBtn.classList.add('btn-disabled');
+            truthBtn.disabled = true;
+            dareBtn.classList.add('btn-disabled');
+            dareBtn.disabled = true;
+            aiTruthBtn.classList.add('btn-disabled');
+            aiTruthBtn.disabled = true;
+            aiDareBtn.classList.add('btn-disabled');
+            aiDareBtn.disabled = true;
+        }
+
+        // Actualiza los segmentos de la ruleta basándose en los jugadores
+        function updateRouletteAppearance() {
+            rouletteWheel.innerHTML = ''; // Limpiar etiquetas de jugador existentes
+            if (players.length === 0) {
+                rouletteWheel.style.backgroundImage = 'none'; // Quitar el fondo de la ruleta
+                rouletteWheel.style.transform = 'rotate(0deg)'; // Resetear giro
+                return;
+            }
+
+            const segmentAngle = 360 / players.length;
+            const colors = [
+                '#FF6347', '#FFD700', '#6A5ACD', '#3CB371', '#FF4500', '#8A2BE2', '#00BFFF', '#ADFF2F',
+                '#FF1493', '#1E90FF', '#BA55D3', '#DAA520', '#7B68EE', '#9ACD32', '#DC143C', '#20B2AA',
+                '#FF8C00', '#9370DB', '#00FA9A', '#CD5C5C', '#87CEEB', '#FF69B4', '#F0E68C', '#4682B4'
+            ];
+
+            // Generar el conic-gradient para los colores de la ruleta
+            let conicGradient = 'conic-gradient(';
+            let currentAngle = 0;
+            players.forEach((player, index) => {
+                const color = colors[index % colors.length];
+                const startAngle = currentAngle;
+                const endAngle = currentAngle + segmentAngle;
+                conicGradient += `${color} ${startAngle}deg ${endAngle}deg${index === players.length - 1 ? '' : ', '}`;
+                currentAngle = endAngle;
+            });
+            conicGradient += ')';
+            rouletteWheel.style.backgroundImage = conicGradient;
+
+            // Posicionar las etiquetas de los jugadores
+            const radius = rouletteWheel.offsetWidth / 2; // Radio de la ruleta (150px)
+            // Ajustar la distancia de la etiqueta para que no se superponga si hay muchos jugadores
+            const baseLabelDistance = radius * 0.7;
+            // Si hay muchos jugadores, acercar las etiquetas al centro
+            const labelDistance = players.length > 8 ? radius * 0.6 : baseLabelDistance;
+
+            players.forEach((player, index) => {
+                const label = document.createElement('div');
+                label.className = 'player-label';
+                label.textContent = player;
+
+                // Calcular el ángulo central del segmento
+                const centerAngle = (index * segmentAngle) + (segmentAngle / 2);
+                const angleRad = (centerAngle - 90) * Math.PI / 180; // Convertir a radianes y ajustar 0deg a la parte superior
+
+                // Calcular posición X e Y
+                const x = radius + labelDistance * Math.cos(angleRad);
+                const y = radius + labelDistance * Math.sin(angleRad);
+
+                label.style.left = `${x}px`;
+                label.style.top = `${y}px`;
+                // Ajustar el transform para centrar la etiqueta y luego enderezarla
+                label.style.transform = `translate(-50%, -50%) rotate(${centerAngle}deg) rotate(-${centerAngle}deg)`;
+
+                rouletteWheel.appendChild(label);
+            });
+        }
+
+        // Función para girar la ruleta
+        function spinRoulette() {
+            if (players.length === 0) {
+                showModal("¡Advertencia!", "No hay jugadores. Por favor, añade al menos un jugador para girar la ruleta.");
+                return;
+            }
+
+            disableSpinButton(); // Deshabilitar el botón de girar durante el giro
+            disableTruthDareButtons(); // Deshabilitar Verdad/Reto mientras gira
+
+            // --- Inicio de la corrección para giros repetidos ---
+            // 1. Quitar la transición para resetear la posición instantáneamente
+            rouletteWheel.style.transition = 'none';
+            // 2. Resetear la rotación a 0
+            rouletteWheel.style.transform = 'rotate(0deg)';
+            // 3. Forzar un reflow para que el navegador aplique el reset. Crucial para re-disparar la animación.
+            void rouletteWheel.offsetWidth;
+            // 4. Volver a aplicar la transición para el siguiente giro animado
+            rouletteWheel.style.transition = 'transform 7s cubic-bezier(0.25, 0.1, 0.25, 1)';
+            // --- Fin de la corrección ---
+
+            const totalRotations = 15; // ¡Aumentamos las rotaciones para que gire muchas veces!
+            const anglePerPlayer = 360 / players.length;
+            const winnerIndex = Math.floor(Math.random() * players.length);
+            currentPlayerIndex = winnerIndex;
+
+            // Calcular el ángulo necesario para que el centro del segmento ganador apunte hacia el puntero (arriba)
+            let targetSegmentCenterAngle = (winnerIndex * anglePerPlayer) + (anglePerPlayer / 2);
+            let rotationToAlignCenter = 360 - (targetSegmentCenterAngle % 360);
+
+            // Asegurarse de que el ángulo final sea siempre positivo y suficientemente grande para múltiples giros
+            const finalRotation = (totalRotations * 360) + rotationToAlignCenter;
+
+            // Añadir un pequeño desfase aleatorio dentro del segmento para mayor naturalidad
+            const randomOffset = (Math.random() * (anglePerPlayer * 0.8)) - (anglePerPlayer * 0.4); // De -0.4*anguloSegmento a +0.4*anguloSegmento
+
+            rouletteWheel.style.transform = `rotate(${finalRotation + randomOffset}deg)`;
+
+            // Después de que la animación termine (7 segundos, ajustado a la transición CSS), determinar el ganador
+            setTimeout(() => {
+                winnerDisplay.textContent = `¡Gana: ${players[winnerIndex]}!`;
+                enableSpinButton(); // Habilitar el botón de girar de nuevo
+                enableTruthDareButtons(); // Habilitar Verdad/Reto
+            }, 7000); // Duración de la animación en CSS, ¡más larga para más suspenso!
+        }
+
+        // Función para mostrar la Verdad
+        function showTruth() {
+            if (currentPlayerIndex === -1) {
+                showModal("¡Espera!", "Primero debes girar la ruleta para seleccionar un jugador.");
+                return;
+            }
+            const randomQuestion = truthQuestions[Math.floor(Math.random() * truthQuestions.length)];
+            showModal(`Verdad para ${players[currentPlayerIndex]}`, randomQuestion);
+        }
+
+        // Función para mostrar el Reto
+        function showDare() {
+            if (currentPlayerIndex === -1) {
+                showModal("¡Espera!", "Primero debes girar la ruleta para seleccionar un jugador.");
+                return;
+            }
+            const randomDare = dareActions[Math.floor(Math.random() * dareActions.length)];
+            showModal(`Reto para ${players[currentPlayerIndex]}`, randomDare);
+        }
+
+        // Función para llamar a la API de Gemini para generar una Verdad
+        async function generateTruthWithAI() {
+            if (currentPlayerIndex === -1) {
+                showModal("¡Espera!", "Primero debes girar la ruleta para seleccionar un jugador.");
+                return;
+            }
+
+            // Deshabilitar botones y mostrar indicador de carga
+            aiTruthBtn.disabled = true;
+            aiTruthBtn.classList.add('btn-disabled');
+            aiDareBtn.disabled = true;
+            aiDareBtn.classList.add('btn-disabled');
+            aiLoadingIndicator.classList.remove('hidden');
+
+            const prompt = "Genera una pregunta de verdad muy íntima y reveladora, adecuada para un juego de Verdad o Reto entre amigos, que invite a la reflexión personal. Que sea una única pregunta directa y concisa, sin introducción ni conclusión.";
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // La clave API será proporcionada por el entorno de Canvas
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            // Implementar reintentos con backoff exponencial
+            let responseText = "No se pudo generar la verdad. Inténtalo de nuevo.";
+            const maxRetries = 3;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        responseText = result.candidates[0].content.parts[0].text;
+                        break; // Salir del bucle si la llamada es exitosa
+                    } else {
+                        throw new Error("Estructura de respuesta inesperada de la API.");
+                    }
+                } catch (error) {
+                    console.error(`Error al llamar a la API de Gemini (intento ${i + 1}):`, error);
+                    if (i < maxRetries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000)); // Backoff exponencial
+                    }
+                }
+            }
+
+            showModal(`Verdad con IA para ${players[currentPlayerIndex]}`, responseText);
+
+            // Habilitar botones y ocultar indicador de carga
+            aiTruthBtn.disabled = false;
+            aiTruthBtn.classList.remove('btn-disabled');
+            aiDareBtn.disabled = false;
+            aiDareBtn.classList.remove('btn-disabled');
+            aiLoadingIndicator.classList.add('hidden');
+        }
+
+        // Función para llamar a la API de Gemini para generar un Reto
+        async function generateDareWithAI() {
+            if (currentPlayerIndex === -1) {
+                showModal("¡Espera!", "Primero debes girar la ruleta para seleccionar un jugador.");
+                return;
+            }
+
+            // Deshabilitar botones y mostrar indicador de carga
+            aiTruthBtn.disabled = true;
+            aiTruthBtn.classList.add('btn-disabled');
+            aiDareBtn.disabled = true;
+            aiDareBtn.classList.add('btn-disabled');
+            aiLoadingIndicator.classList.remove('hidden');
+
+            const prompt = "Genera un reto muy divertido y que ponga al jugador en una situación un poco vulnerable o embarazosa, adecuada para un juego de Verdad o Reto entre amigos. Que sea una única acción clara y concisa, sin introducción ni conclusión, por ejemplo: 'Canta una canción a todo pulmón en la calle.'";
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // La clave API será proporcionada por el entorno de Canvas
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            // Implementar reintentos con backoff exponencial
+            let responseText = "No se pudo generar el reto. Inténtalo de nuevo.";
+            const maxRetries = 3;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        responseText = result.candidates[0].content.parts[0].text;
+                        break; // Salir del bucle si la llamada es exitosa
+                    } else {
+                        throw new Error("Estructura de respuesta inesperada de la API.");
+                    }
+                } catch (error) {
+                    console.error(`Error al llamar a la API de Gemini (intento ${i + 1}):`, error);
+                    if (i < maxRetries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000)); // Backoff exponencial
+                    }
+                }
+            }
+
+            showModal(`Reto con IA para ${players[currentPlayerIndex]}`, responseText);
+
+            // Habilitar botones y ocultar indicador de carga
+            aiTruthBtn.disabled = false;
+            aiTruthBtn.classList.remove('btn-disabled');
+            aiDareBtn.disabled = false;
+            aiDareBtn.classList.remove('btn-disabled');
+            aiLoadingIndicator.classList.add('hidden');
+        }
+
+        // Función para mostrar un modal personalizado
+        function showModal(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            gameModal.classList.remove('hidden');
+        }
+
+        // Función para cerrar el modal
+        function closeModal() {
+            gameModal.classList.add('hidden');
+        }
+
+        // Asignar Event Listeners
+        addPlayerBtn.addEventListener('click', addPlayer);
+        playerNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addPlayer();
+            }
+        });
+        spinBtn.addEventListener('click', spinRoulette);
+        truthBtn.addEventListener('click', showTruth);
+        dareBtn.addEventListener('click', showDare);
+        aiTruthBtn.addEventListener('click', generateTruthWithAI);
+        aiDareBtn.addEventListener('click', generateDareWithAI);
+        closeModalBtn.addEventListener('click', closeModal);
+        okModalBtn.addEventListener('click', closeModal);
+
+        // Inicializar el estado de los botones al cargar la página
+        window.onload = () => {
+            renderPlayers(); // Renderizar jugadores iniciales (si los hubiera)
+            if (players.length === 0) {
+                disableSpinButton();
+                aiTruthBtn.disabled = true; // Deshabilitar botones de IA al inicio si no hay jugadores
+                aiDareBtn.disabled = true;   // Deshabilitar botones de IA al inicio si no hay jugadores
+            }
+            disableTruthDareButtons(); // Deshabilitar Verdad/Reto al inicio
+        };
+    </script>
+</body>
+</html>
